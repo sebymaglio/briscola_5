@@ -1,0 +1,1 @@
+Fallback: immagini comuni VALORE_SEME.jpg (es. A_Denari.jpg) usate se manca quella del deck.

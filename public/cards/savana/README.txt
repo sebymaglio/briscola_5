@@ -1,0 +1,1 @@
+Metti qui le immagini delle carte: VALORE_SEME.jpg (es. A_Denari.jpg)

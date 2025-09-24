@@ -1,0 +1,1 @@
+Carte SICILIANE: metti qui i file VALORE_SEME.jpg (es. A_Denari.jpg) e un 'back.jpg' per il dorso.

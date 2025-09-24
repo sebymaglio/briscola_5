@@ -1,0 +1,521 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Briscola a 5-by Sebastiano Magliocco</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 20px auto; }
+    #hand { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+    .card { width: 90px; height: auto; border-radius: 10px; cursor: pointer; transition: transform 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    .card:hover { transform: scale(1.06); }
+    .disabled { opacity: .4; pointer-events: none; filter: grayscale(60%); }
+    .myturn { outline: 3px solid #1e88e5; outline-offset: 4px; border-radius: 12px; padding: 2px; }
+    .briscola { box-shadow: 0 0 0 3px rgba(255,165,0,.7); }
+    #table { display:flex; gap:14px; min-height: 120px; border: 1px dashed #aaa; padding: 8px; border-radius: 8px; margin: 8px 0; align-items: center; }
+    #players { margin: 8px 0; white-space: pre-wrap; }
+    .turn { font-weight: bold; color: #1e88e5; }
+    #auctionLog { border:1px solid #eee; padding:8px; min-height:40px; margin-top:6px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
+    input[type=text], input[type=password], input[type=number]{ padding:6px; }
+    select, button { padding:6px; }
+    .muted { color:#666; }
+    .played { text-align:center; }
+    .played span { display:block; font-size:12px; margin-bottom:4px; }
+    .debug { background:#fffbe6; border:1px solid #ffe58f; padding:8px; border-radius:8px; }
+    .kick { margin-left: 6px; font-size: 12px; padding: 3px 6px; }
+    .host { font-weight: bold; }
+    .hidden { display:none !important; }
+    #backPreview { width: 60px; height: 90px; border-radius: 8px; border:1px solid #ccc; background-size: cover; background-position: center; display:inline-block; vertical-align:middle; margin-left:8px; }
+    #backWrap { display:none; align-items:center; gap:8px; }
+    #confirmBar { margin: 10px 0; padding: 8px; border: 1px solid #ddd; border-radius: 8px; background: #f7f7f7; display:none; }
+    #ltOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index: 9999; }
+    #ltModal { background:#fff; border-radius:12px; padding:14px; width: min(680px, 96vw); }
+    #ltGrid { display:flex; gap:12px; flex-wrap: wrap; justify-content:center; }
+    #ltModal h3 { margin: 0 0 8px 0; }
+    #ltClose { float:right; }
+    .ltCard { text-align:center; }
+    #endOverlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; z-index: 10000; }
+    #endModal { background:#fff; border-radius:14px; padding:16px; width:min(520px, 95vw); text-align:center; }
+    #endModal h2 { margin: 0 0 8px 0; }
+  </style>
+</head>
+<body>
+  <h1>Briscola a 5-by Sebastiano Magliocco</h1>
+
+  <div class="row">
+    <label>Stanza: <input id="room" value="Stanza" type="text"/></label>
+    <label>Nome: <input id="name" value="Giocatore" type="text"/></label>
+    <label>Password: <input id="code" type="password" placeholder="decisa dall'host"/></label>
+    <button id="join">Entra</button>
+    <button id="start">Avvia partita</button>
+    <button id="copy">Copia link stanza</button>
+    <span id="copied" class="muted"></span>
+  </div>
+
+  <div id="debugBox" class="debug" style="display:none;">
+    <strong>Modalità debug</strong> – ogni TAB ha un ID separato. 
+    <button id="newid">Nuova identità (debug)</button>
+    <span class="muted">ID: <span id="curid">—</span></span>
+  </div>
+
+  <div class="row" id="hostTools" style="display:none;">
+    <label>Imposta/Modifica password: <input id="hostCode" type="password" placeholder="nuova password"></label>
+    <button id="setCode">Salva</button>
+    <label style="margin-left:16px;">
+      Mazzo: 
+      <select id="deckSelect">
+        <option value="siciliane">Siciliane</option>
+        <option value="savana">Savana</option>
+      </select>
+    </label>
+    <label style="margin-left:16px;">
+    <span id="backWrap"><span class="muted">Dorso:</span> <span id="backPreview"></span></span>
+    </label>
+    <p>
+    <label style="margin-left:16px;">
+      Prima carta da:
+      <select id="leaderMode">
+        <option value="auctionStarter">Chi inizia l’asta</option>
+        <option value="4denari">Chi ha il 4 di Denari</option>
+      </select>
+    </label>
+    <button id="reset" style="margin-left:auto;">🔄 Reset partita</button>
+    <button id="showLast">👁️ Ultima presa</button>
+    <span id="codeInfo" class="muted"></span> 
+    </p>
+  </div>
+
+  <div id="players"></div>
+  <div>Turno: <span id="turn">—</span></div>
+
+  <div id="auctionArea" style="display:none;">
+    <h3>Asta</h3>
+    <div class="row">
+      <input id="bidVal" type="number" min="61" max="120" step="1" placeholder="61–120" />
+      <button id="bidBtn">Offri</button>
+      <button id="passBtn">Passa</button>
+    </div>
+    <div id="auctionLog"></div>
+  </div>
+
+  <div id="callArea" style="display:none;">
+    <h3>Sei il chiamatore: scegli una carta da chiamare (NON deve essere nella tua mano)</h3>
+    <div class="row">
+      <label>Seme: 
+        <select id="callSuit">
+          <option>Denari</option>
+          <option>Spade</option>
+          <option>Coppe</option>
+          <option>Bastoni</option>
+        </select>
+      </label>
+      <label>Valore:
+        <select id="callRank">
+          <option>A</option>
+          <option>3</option>
+          <option>Re</option>
+          <option>Cavallo</option>
+          <option>Donna</option>
+          <option>7</option>
+          <option>6</option>
+          <option>5</option>
+          <option>4</option>
+          <option>2</option>
+        </select>
+      </label>
+      <button id="callBtn">Chiama</button>
+    </div>
+  </div>
+
+  <h3>La tua mano</h3>
+  <div id="hand"></div>
+
+  <h3>Tavolo (presa corrente)</h3>
+  <div id="table"></div>
+
+  <div id="confirmBar">
+    <span>5 carte a terra.</span>
+    <button id="confirmBtn">Conferma presa (host)</button>
+    <span class="muted" id="confirmHint"></span>
+  </div>
+
+  <h3>Chat</h3>
+  <div id="chatlog" style="border:1px solid #ddd; padding:8px; height:120px; overflow:auto;"></div>
+  <input id="msg" placeholder="scrivi..." />
+  <button id="send">Invia</button>
+
+  <!-- Last Trick Modal -->
+  <div id="ltOverlay">
+    <div id="ltModal">
+      <button id="ltClose">Chiudi</button>
+      <h3>Ultima presa</h3>
+      <div class="muted" id="ltInfo"></div>
+      <div id="ltGrid"></div>
+    </div>
+  </div>
+
+  <!-- End of round modal -->
+  <div id="endOverlay">
+    <div id="endModal">
+      <h2 id="endTitle">Esito</h2>
+      <p id="endDetail"></p>
+      <button id="endClose">OK</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    let socket;
+    const $ = s => document.querySelector(s);
+    const handEl = $('#hand'), tableEl = $('#table');
+
+    const SUITS = ['Denari','Spade','Coppe','Bastoni'];
+    const RANKS = ['A','3','Re','Cavallo','Donna','7','6','5','4','2'];
+    const suitIndex = s => SUITS.indexOf(s);
+    const rankIndex = r => RANKS.indexOf(r);
+
+    const params = new URLSearchParams(location.search);
+    const roomFromUrl = params.get('room');
+    if (roomFromUrl) $('#room').value = roomFromUrl;
+    const debugMode = params.get('debug') === '1';
+    if (debugMode) $('#debugBox').style.display = 'block';
+    const storage = debugMode ? sessionStorage : localStorage;
+    function genId(){ return (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())).replace(/-/g,''); }
+    const store = {
+      get id(){ let v = storage.getItem('playerId'); if(!v){ v = genId(); storage.setItem('playerId', v); } return v; },
+      set id(v){ storage.setItem('playerId', v); $('#curid').textContent = v; },
+      get name(){ return localStorage.getItem('name') || 'Giocatore'; },
+      set name(v){ localStorage.setItem('name', v); }
+    };
+    $('#curid').textContent = store.id;
+
+    // Stato
+    let myName = 'Giocatore';
+    let myId = store.id;
+    let isMyTurn = false;
+    let canPlay = false;
+    let lockPlay = false;
+    let gameState = 'lobby';
+    let hostId = null;
+    let playersFull = [];
+    let roomHasCode = false;
+    let deckType = 'siciliane';
+    let startLeaderMode = 'auctionStarter';
+    let myHandCards = [];
+    let iPassed = false;
+    let calledCard = null;
+    let declarerId = null;
+    let mateId = null;
+
+    function updateBackPreview(){
+      const url = `cards/${deckType}/back.jpg`; const el = $('#backPreview');
+      el.style.backgroundImage = `url('${url}')`;
+      $('#backWrap').style.display = 'inline-flex';
+    }
+
+    // Copy link
+    $('#copy').onclick = async () => {
+      const code = $('#room').value.trim() || 'nome stanza';
+      const base = `${location.origin}${location.pathname}?room=${encodeURIComponent(code)}`;
+      const url = debugMode ? `${base}&debug=1` : base;
+      try { await navigator.clipboard.writeText(url); $('#copied').textContent = 'Link copiato!'; setTimeout(()=> $('#copied').textContent = '', 2000); } catch(e){ $('#copied').textContent = 'Copia fallita'; }
+    };
+
+    function imgSrc(card){ return `cards/${deckType}/${card.rank}_${card.suit}.jpg`; }
+
+    function addPlayed(by, card){
+      const key = `${by}-${card.rank}-${card.suit}`;
+      if (tableEl.querySelector(`[data-key="${key}"]`)) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'played';
+      wrap.dataset.key = key;
+      const name = document.createElement('span'); name.textContent = by;
+      const img = document.createElement('img'); img.className='card'; img.src = imgSrc(card); img.alt = `${card.rank} di ${card.suit}`;
+      img.onerror = () => { img.src = `cards/${card.rank}_${card.suit}.jpg`; img.onerror = () => { img.replaceWith(Object.assign(document.createElement('div'), {textContent:`${card.rank} di ${card.suit}`, className:'card', style:'width:auto;border:1px solid #ccc;padding:6px'})); }; };
+      wrap.appendChild(name); wrap.appendChild(img);
+      tableEl.appendChild(wrap);
+    }
+
+    function renderPlayers(){
+      const isHost = (hostId === myId);
+      $('#hostTools').style.display = isHost ? 'flex' : 'none';
+      $('#codeInfo').textContent = isHost ? (roomHasCode ? 'Password attiva' : 'Nessuna password') : (roomHasCode ? 'Stanza protetta da password' : 'Stanza aperta');
+      if (isHost) {
+        $('#deckSelect').value = deckType;
+        $('#leaderMode').value = startLeaderMode;
+      }
+      updateBackPreview();
+      const lines = playersFull.map(p => {
+        const badge = p.connected ? '🟢' : '⚪';
+        const hostStar = p.id === hostId ? ' ⭐' : '';
+        const btn = (isHost && p.id !== myId) ? ` <button class="kick" onclick="kick('${p.id}')">Kick</button>` : '';
+        return `${badge} <span class="${p.id===hostId?'host':''}">${p.name}${hostStar}</span>${btn}`;
+      });
+      $('#players').innerHTML = lines.join('<br>');
+    }
+    window.kick = (pid) => { socket.emit('kickPlayer', pid); };
+
+    function renderHand(cards){
+      myHandCards = cards || [];
+      const sorted = [...myHandCards].sort((a,b) => {
+        const ds = suitIndex(a.suit) - suitIndex(b.suit);
+        if (ds !== 0) return ds;
+        return rankIndex(a.rank) - rankIndex(b.rank);
+      });
+      handEl.innerHTML = '';
+      sorted.forEach(c => {
+        const img = document.createElement('img');
+        img.className = 'card';
+        img.src = imgSrc(c);
+        img.alt = `${c.rank} di ${c.suit}`;
+        img.onerror = () => { img.src = `cards/${c.rank}_${c.suit}.jpg`; };
+        if (calledCard && c.suit === calledCard.suit) img.classList.add('briscola');
+        if (!canPlay) img.classList.add('disabled');
+        img.onclick = () => { if (!canPlay || lockPlay) return; lockPlay = true; socket.emit('playCard', c); };
+        handEl.appendChild(img);
+      });
+      handEl.classList.toggle('myturn', isMyTurn && gameState==='playing');
+    }
+
+    function bid(v){ if (iPassed) return alert('Hai già passato: non puoi più offrire'); socket.emit('bid', v); }
+    function sendBid(){ const v = parseInt($('#bidVal').value, 10); if (Number.isFinite(v)) bid(v); }
+    function doCall(){ const suit = $('#callSuit').value; const rank = $('#callRank').value; socket.emit('callCard', { suit, rank }); }
+    function setAuctionControls(enabled){
+      $('#bidVal').disabled = !enabled || iPassed;
+      $('#bidBtn').disabled = !enabled || iPassed;
+      $('#passBtn').disabled = !enabled || iPassed;
+      $('#auctionArea').classList.toggle('myturn', enabled && !iPassed);
+    }
+
+    function connect(){
+      const room = $('#room').value.trim() || 'nome stanza';
+      const name = $('#name').value.trim() || store.name;
+      const accessCode = $('#code').value.trim();
+      store.name = name;
+      myName = name;
+      myId = store.id;
+
+      socket = io();
+      socket.emit('join', { roomId: room, name, playerId: store.id, accessCode: accessCode || null });
+      socket.on('players', list => { /* legacy */ });
+      socket.on('playersFull', list => { playersFull = list; renderPlayers(); });
+      socket.on('roomInfo', info => { 
+        hostId = info.hostId || null; 
+        roomHasCode = !!info.hasCode; 
+        deckType = info.deckType || 'siciliane';
+        startLeaderMode = info.startLeaderMode || 'auctionStarter';
+        renderPlayers(); renderHand(myHandCards);
+      });
+      socket.on('chat', msg => { $('#chatlog').innerHTML += `<div>${msg}</div>`; $('#chatlog').scrollTop = 1e9; });
+      socket.on('errorMsg', e => { alert(e); lockPlay = false; }); 
+      socket.on('started', ({deckType: dt, auctionStarter}) => { 
+        if (dt) deckType = dt;
+        tableEl.innerHTML = ''; 
+        $('#auctionLog').innerHTML='';
+        $('#auctionArea').style.display='none';
+        $('#callArea').style.display='none';
+        calledCard = null;
+        declarerId = null; mateId = null;
+        isMyTurn = false; canPlay = false; lockPlay = false; gameState = 'auction';
+        document.querySelector('#confirmBar').style.display='none';
+        iPassed = false;
+        renderHand(myHandCards);
+        updateBackPreview();
+        if (auctionStarter) { $('#auctionLog').innerHTML = `<div>Asta: si parte da <strong>${auctionStarter}</strong></div>`; }
+      });
+      socket.on('resetDone', ()=>{
+        tableEl.innerHTML = '';
+        $('#auctionLog').innerHTML='';
+        $('#auctionArea').style.display='none';
+        $('#callArea').style.display='none';
+        $('#turn').textContent='—';
+        iPassed = false;
+        isMyTurn = false; canPlay = false; lockPlay = false; gameState = 'lobby';
+        document.querySelector('#confirmBar').style.display='none';
+        renderHand([]);
+      });
+      socket.on('yourHand', cards => { renderHand(cards); });
+
+      socket.on('stateSync', (st)=>{
+        gameState = st.state || 'lobby';
+        calledCard = st.calledCard || null;
+        declarerId = st.declarerId || null;
+        mateId = st.mateId || null;
+        $('#turn').textContent = st.next || '—';
+        hostId = st.hostId || null;
+        roomHasCode = !!st.hasCode;
+        deckType = st.deckType || deckType;
+        startLeaderMode = st.startLeaderMode || startLeaderMode;
+        playersFull = st.players || [];
+        renderPlayers();
+        tableEl.innerHTML = '';
+        (st.trick||[]).forEach(t => addPlayed(t.by, t.card));
+        $('#auctionArea').style.display = (st.state==='auction') ? 'block' : 'none';
+        $('#callArea').style.display = (st.state==='calling' && st.declarer===myName) ? 'block' : 'none';
+        const myTurn = (st.next === myName);
+        isMyTurn = myTurn;
+        canPlay = myTurn && (st.state==='playing') && !document.querySelector('#confirmBar').style.display==='block';
+        if (!canPlay) lockPlay = false;
+        setAuctionControls(st.state==='auction' && myTurn);
+      });
+
+      socket.on('turn', who => { 
+        $('#turn').textContent = who; 
+        $('#turn').className = 'turn'; 
+        isMyTurn = (who === myName); 
+        canPlay = isMyTurn && gameState==='playing' && !(document.querySelector('#confirmBar').style.display==='block'); 
+        if (!canPlay) lockPlay = false;
+        const imgs = handEl.querySelectorAll('img.card, div.card');
+        imgs.forEach(el => el.classList.toggle('disabled', !canPlay));
+        handEl.classList.toggle('myturn', canPlay);
+      });
+      socket.on('trickStart', ({leader})=>{
+        $('#turn').textContent = leader;
+        tableEl.innerHTML = '';
+        gameState = 'playing';
+        lockPlay = false;
+        document.querySelector('#confirmBar').style.display='none';
+        isMyTurn = (leader === myName);
+        canPlay = isMyTurn;
+        const imgs = handEl.querySelectorAll('img.card, div.card');
+        imgs.forEach(el => el.classList.toggle('disabled', !canPlay));
+        handEl.classList.toggle('myturn', canPlay);
+        $('#auctionArea').style.display='none';
+        $('#auctionLog').innerHTML='';
+      });
+      socket.on('played', ({by, card}) => { 
+        addPlayed(by, card); 
+        if (by === myName) { lockPlay = false; }
+      });
+      socket.on('trickFull', ({trick}) => {
+        trick.forEach(t => addPlayed(t.by, t.card));
+        canPlay = false;
+        const imgs = handEl.querySelectorAll('img.card, div.card');
+        imgs.forEach(el => el.classList.add('disabled'));
+        const cb = document.querySelector('#confirmBar');
+        cb.style.display = 'block';
+        const btn = document.querySelector('#confirmBtn'); btn.style.display = (myId===hostId) ? 'inline-block' : 'none';
+        const hint = document.querySelector('#confirmHint'); hint.textContent = (myId!==hostId) ? 'In attesa di conferma dell’host…' : '';
+      });
+      socket.on('trickEnd', ({winner, points})=>{
+        $('#auctionLog').innerHTML += `<div>Presa a ${winner} (+${points})</div>`;
+        tableEl.innerHTML = '';
+        lockPlay = false;
+        document.querySelector('#confirmBar').style.display='none';
+      });
+
+      socket.on('auctionStart', ({first})=>{
+        $('#auctionArea').style.display='block';
+        $('#auctionLog').innerHTML=`<div>L'asta inizia (random) da <strong>${first}</strong></div>`;
+        gameState = 'auction';
+        iPassed = false;
+        setAuctionControls(false);
+      });
+      socket.on('yourTurnAuction', ()=>{ setAuctionControls(true); });
+      socket.on('auctionMsg', msg => { 
+        $('#auctionLog').innerHTML += `<div>${msg}</div>`;
+        if (msg.includes('passa') && msg.includes(myName)) { // ho passato io
+          iPassed = true; setAuctionControls(false);
+        }
+      });
+      socket.on('auctionEnd', ({winner,value})=>{
+        $('#auctionLog').innerHTML += `<div>Asta vinta da ${winner} con ${value}</div>`;
+        $('#auctionArea').style.display='none';
+        $('#auctionLog').innerHTML='';
+        gameState = 'calling';
+        setAuctionControls(false);
+      });
+
+      socket.on('yourTurnCall', ()=>{ 
+        $('#callArea').style.display='block';
+        alert("Sei il chiamatore: seleziona seme e valore della carta da chiamare (non deve essere nella tua mano), poi premi Chiama.");
+      });
+      socket.on('called', ({declarer,card,briscola})=>{
+        $('#callArea').style.display='none';
+        $('#auctionLog').innerHTML += `<div>${declarer} ha chiamato ${card.rank} di ${card.suit}. Briscola: ${briscola}.</div>`;
+        calledCard = card;
+        // highlight briscole
+        const imgs = handEl.querySelectorAll('img.card');
+        imgs.forEach(img => { if ((img.alt||'').includes(`di ${card.suit}`)) img.classList.add('briscola'); });
+      });
+
+      socket.on('mateRevealed', ({mate})=>{
+        $('#auctionLog').innerHTML += `<div>Compagno rivelato: ${mate}</div>`;
+      });
+
+      // Last Trick modal
+      const ltOverlay = $('#ltOverlay'); const ltGrid = $('#ltGrid'); const ltInfo = $('#ltInfo');
+      $('#ltClose').onclick = ()=> ltOverlay.style.display = 'none';
+      socket.on('lastTrick', (data)=>{
+        ltGrid.innerHTML = '';
+        (data.trick||[]).forEach(t => {
+          const div = document.createElement('div'); div.className='ltCard';
+          const name = document.createElement('div'); name.textContent = t.by; name.className='muted';
+          const img = document.createElement('img'); img.className='card'; img.src = imgSrc(t.card); img.alt = `${t.card.rank} di ${t.card.suit}`;
+          img.onerror = () => { img.src = `cards/${t.card.rank}_${t.card.suit}.jpg`; };
+          div.appendChild(name); div.appendChild(img);
+          ltGrid.appendChild(div);
+        });
+        ltInfo.textContent = `Vincitore: ${data.winner} | Punti presa: ${data.points} | Briscola: ${data.briscola || '—'} | Seme d'uscita: ${data.leadSuit || '—'}`;
+        ltOverlay.style.display = 'flex';
+      });
+
+      // End of round modal
+      const endOverlay = $('#endOverlay'); const endTitle = $('#endTitle'); const endDetail = $('#endDetail');
+      $('#endClose').onclick = () => { endOverlay.style.display = 'none'; };
+      socket.on('roundEnd', ({declarerId: dId, mateId: mId, points, success})=>{
+        declarerId = dId || null; mateId = mId || null;
+        const myTeam = (myId && (myId === declarerId || (mateId && myId === mateId)));
+        const userWon = myTeam ? !!success : !success;
+        endTitle.textContent = userWon ? 'Hai vinto! 🎉' : 'Hai perso 😅';
+        endDetail.textContent = `Punteggio finale — Chiamatore+Compagno: ${points.declarerTeam} • Avversari: ${points.opponents}`;
+        endOverlay.style.display = 'flex';
+        // Back to lobby state already handled server-side
+        canPlay = false; isMyTurn = false; lockPlay = false; gameState = 'lobby';
+        document.querySelector('#confirmBar').style.display='none';
+      });
+    }
+
+    $('#join').onclick = () => { connect(); };
+    $('#start').onclick = () => socket?.emit('start');
+    $('#send').onclick = () => { const v = $('#msg').value.trim(); if (v) socket?.emit('chat', v); $('#msg').value=''; };
+
+    // Conferma presa (solo host)
+    document.addEventListener('click', (e)=>{
+      if (e.target && e.target.id === 'confirmBtn') socket?.emit('confirmTrick');
+    });
+
+    // Host tools
+    $('#setCode').onclick = () => {
+      const v = $('#hostCode').value.trim();
+      socket?.emit('setAccessCode', v || null);
+      $('#hostCode').value = '';
+    };
+    $('#deckSelect').onchange = (e) => {
+      socket?.emit('setDeckType', e.target.value);
+      setTimeout(()=>{ renderHand(myHandCards); updateBackPreview(); }, 50);
+    };
+    $('#leaderMode').onchange = (e) => {
+      socket?.emit('setStartLeaderMode', e.target.value); // 'auctionStarter' | '4denari'
+    };
+    $('#reset').onclick = () => {
+      if (confirm('Sei sicuro di resettare la partita e tornare in lobby?')) socket?.emit('resetGame');
+    };
+    $('#showLast').onclick = () => {
+      socket?.emit('requestLastTrick');
+    };
+
+    // Debug identity tools
+    $('#newid').onclick = () => {
+      try { socket?.disconnect(); } catch(e){}
+      store.id = genId();
+      connect();
+    };
+
+    // Auction buttons handlers
+    $('#bidBtn').onclick = () => { const v = parseInt($('#bidVal').value, 10); if (Number.isFinite(v)) socket.emit('bid', v); };
+    $('#passBtn').onclick = () => socket.emit('bid', 'pass');
+    $('#callBtn').onclick = () => { const suit = $('#callSuit').value; const rank = $('#callRank').value; socket.emit('callCard', { suit, rank }); };
+  </script>
+</body>
+</html>
